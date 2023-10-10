@@ -26,14 +26,12 @@ def extract_js_urls(page_url):
     
     return js_urls
 
-def extract_endpoints(js_url):
+def extract_endpoints(js_url, js_code):
     endpoints = set()
     urls = set()
 
     try:
-        js_response = requests.get(js_url)
-        js_code = js_response.text
-        lines = js_code.split('\n')  # Divide el código en líneas
+        lines = js_code.split('\n')
 
         for line_number, line in enumerate(lines, start=1):
             url_matches = re.findall(r'(?:(?:https?://|www\.)[^\s/$.?#].[^\s]*)', line)
@@ -46,22 +44,20 @@ def extract_endpoints(js_url):
                 if len(endpoint) > 4:
                     endpoints.add(endpoint)
 
-        if urls:
-            for url in urls:
-                print(f"[yellow3][-][dark_olive_green1] URL found in [white]{js_url}[dark_olive_green1] [Line {line_number}]: [red1]{url}")
+            if urls:
+                for url in urls:
+                    print(f"[yellow3][-][dark_olive_green1] URL found in [white]{js_url}[dark_olive_green1] [Line {line_number}]: [red1]{url}")
 
-        if endpoints:
-            for endpoint in endpoints:
-                print(f"[yellow3][-][dark_olive_green1] Endpoint found in [white]{js_url}[dark_olive_green1] [Line {line_number}]: [red1]{endpoint}")
+            if endpoints:
+                for endpoint in endpoints:
+                    print(f"[yellow3][-][dark_olive_green1] Endpoint found in [white]{js_url}[dark_olive_green1] [Line {line_number}]: [red1]{endpoint}")
 
     except requests.exceptions.RequestException as e:
         print(f"[red]Error getting JavaScript file: {e}")
 
-def has_basic_auth(js_url):
+def has_basic_auth(js_url, js_code):
     try:
-        js_response = requests.get(js_url)
-        js_code = js_response.text
-        lines = js_code.split('\n')  # Divide el código en líneas
+        lines = js_code.split('\n')
 
         for line_number, line in enumerate(lines, start=1):
             if "basic" in line.lower():
@@ -77,7 +73,7 @@ def has_basic_auth(js_url):
     except requests.exceptions.RequestException as e:
         print(f"[red]Error getting JavaScript file: {e}")
 
-def find_api_keys(js_url):
+def find_api_keys(js_url, js_code):
     api_keys_file_path = os.path.join("data", "api_keys.txt")
     api_key_patterns = {}
 
@@ -91,20 +87,17 @@ def find_api_keys(js_url):
         return
 
     try:
-        js_response = requests.get(js_url)
-        js_code = js_response.text
-
-        lines = js_code.split('\n')  # Divide el código en líneas
-        for line_number, line in enumerate(lines, start=1):
+        for line_number, line in enumerate(js_code.split('\n'), start=1):
             for api_name, regex_pattern in api_key_patterns.items():
-                matches = re.search(regex_pattern, line)
+                pattern = fr'\b{regex_pattern}\b[\'";,) ]*'  
+                matches = re.search(pattern, line)
                 if matches:
                     print(f"[yellow3][-][dark_olive_green1] Posible [white]{api_name}[dark_olive_green1] found in [white]{js_url}[dark_olive_green1] [Line {line_number}]: [red1]{matches.group(0)}")
     
     except requests.exceptions.RequestException as e:
         print(f"[red]Error getting JavaScript file: {e}")
 
-def find_users_in_js(js_url):
+def find_users_in_js(js_url, js_code):
     users_file_path = os.path.join("data", "users.txt")
     users_list = []
 
@@ -117,28 +110,24 @@ def find_users_in_js(js_url):
         return
 
     try:
-        js_response = requests.get(js_url)
-        js_code = js_response.text
-
-        lines = js_code.split('\n')  # Divide el código en líneas
+        lines = js_code.split('\n')
         for line_number, line in enumerate(lines, start=1):
             for username in users_list:
-                if username in line:
-                    print(f"[yellow3][-][dark_olive_green1] Posible username or password found in [white]{js_url}[dark_olive_green1] [Line {line_number}]: [red1]{username}")
+
+                if re.search(fr'\b{re.escape(username)}\b', line):
+                    print(f"[yellow3][-][dark_olive_green1] Possible username or password found in [white]{js_url}[dark_olive_green1] [Line {line_number}]: [red1]{username}")
 
     except requests.exceptions.RequestException as e:
         print(f"[red]Error getting JavaScript file: {e}")
         
-def find_interesting_words_in_js(js_url):
-    interesting_words = ["user", "pass", "password", "key", "api"]  
+def find_interesting_words_in_js(js_url, js_code):
+    interesting_words = ["user", "pass", "password", "api", "token", "secret", "auth", "credentials", "access", "username", "api_key"]
+    
     try:
-        js_response = requests.get(js_url)
-        js_code = js_response.text
-
         lines = js_code.split('\n') 
         for line_number, line in enumerate(lines, start=1):
             for word in interesting_words:
-                if word in line:
+                if re.search(fr'\b{re.escape(word)}\b', line, re.IGNORECASE):
                     print(f"[yellow3][-][dark_olive_green1] Possible interesting word found in [white]{js_url}[dark_olive_green1] [Line {line_number}]: [red1]{word}")
 
     except requests.exceptions.RequestException as e:
@@ -152,8 +141,8 @@ def beautify_js(js_code):
         return js_codess
 
 def main():
-    parser = argparse.ArgumentParser(description="Crawlea archivos JavaScript en una página web y muestra los endpoints.")
-    parser.add_argument("-u", "--url", required=True, help="URL de la página web")
+    parser = argparse.ArgumentParser(description="Tool written in Python capable of extracting all possible valuable information from a JS file.")
+    parser.add_argument("-u", "--url", required=True, help="target URL")
     args = parser.parse_args()
     
     print(f"""[bold magenta3]
@@ -189,14 +178,14 @@ def main():
         for js_url in js_urls:
             js_response = requests.get(js_url)
             js_code = js_response.text
-            # Formatear el código JavaScript
+            
             formatted_js_code = beautify_js(js_code)  
             
-            endpoints = extract_endpoints(js_url)
-            has_basic_auth(js_url)
-            find_users_in_js(js_url)      
-            find_api_keys(js_url)
-            find_interesting_words_in_js(js_url)
+            extract_endpoints(js_url, formatted_js_code)
+            has_basic_auth(js_url, formatted_js_code)
+            find_users_in_js(js_url, formatted_js_code)      
+            find_api_keys(js_url, formatted_js_code)
+            find_interesting_words_in_js(js_url, formatted_js_code)
 
     else:
         print(f"[bold red]No JavaScript files found in [bold white]{page_url}")
